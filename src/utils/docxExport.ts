@@ -11,13 +11,91 @@ import {
   AlignmentType,
   BorderStyle,
   ShadingType,
-  Header,
   Footer,
   PageNumber,
-  HeadingLevel,
+  PageOrientation,
+  TableLayoutType,
 } from 'docx';
-import { DailyLogEntry, ReportHeaderSettings } from '../types';
+import { DailyLogEntry, PhotoItem, ReportHeaderSettings } from '../types';
 import { dataUrlToUint8Array, formatReportDate, formatMonthYear } from './imageUtils';
+
+// Standard A4 page dimensions in DXA (twips: 1/20 point, 1440 twips = 1 inch, 1 mm ≈ 56.6929 twips)
+// 210 mm = 11906 dxa, 297 mm = 16838 dxa
+const A4_PAGE_WIDTH = 11906;
+const A4_PAGE_HEIGHT = 16838;
+
+// Balanced margins: 0.5 in (720 dxa = 12.7 mm) on all 4 sides
+const MARGIN_TOP = 720;
+const MARGIN_BOTTOM = 720;
+const MARGIN_LEFT = 720;
+const MARGIN_RIGHT = 720;
+
+// Usable printable width between left and right margins
+// 11906 - 720 - 720 = 10466 dxa (7.268 inches = 184.6 mm)
+const USABLE_WIDTH = A4_PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
+
+/**
+ * Calculates scaled dimensions within a maximum bounding box while strictly preserving aspect ratio.
+ */
+function computeImageDimensions(
+  naturalWidth: number | undefined,
+  naturalHeight: number | undefined,
+  maxW: number,
+  maxH: number
+): { width: number; height: number } {
+  if (!naturalWidth || !naturalHeight || naturalWidth <= 0 || naturalHeight <= 0) {
+    return { width: maxW, height: maxH };
+  }
+
+  const ratio = naturalWidth / naturalHeight;
+  const targetRatio = maxW / maxH;
+
+  if (ratio >= targetRatio) {
+    // Image is wider than bounding box -> constrain by width
+    const width = maxW;
+    const height = Math.max(1, Math.round(maxW / ratio));
+    return { width, height };
+  } else {
+    // Image is taller than bounding box -> constrain by height
+    const height = maxH;
+    const width = Math.max(1, Math.round(maxH * ratio));
+    return { width, height };
+  }
+}
+
+/**
+ * Resolves natural dimensions for an image either from stored metadata or from dataUrl.
+ */
+async function resolvePhotoDimensions(
+  photo: PhotoItem,
+  defaultW = 4,
+  defaultH = 3
+): Promise<{ width: number; height: number }> {
+  if (photo.width && photo.height && photo.width > 0 && photo.height > 0) {
+    return { width: photo.width, height: photo.height };
+  }
+
+  if (typeof Image !== 'undefined' && photo.dataUrl) {
+    try {
+      return await new Promise<{ width: number; height: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          if (img.naturalWidth && img.naturalHeight) {
+            resolve({ width: img.naturalWidth, height: img.naturalHeight });
+          } else {
+            resolve({ width: defaultW, height: defaultH });
+          }
+        };
+        img.onerror = () => resolve({ width: defaultW, height: defaultH });
+        img.src = photo.dataUrl;
+      });
+    } catch {
+      return { width: defaultW, height: defaultH };
+    }
+  }
+
+  return { width: defaultW, height: defaultH };
+}
 
 export async function generateWordDocument(
   entries: DailyLogEntry[],
@@ -59,22 +137,27 @@ export async function generateWordDocument(
     right: { style: BorderStyle.NONE, size: 0, color: 'auto' },
   };
 
-  // Build the Header Table exactly matching IMG_4425.PNG
-  // Total table width: 9360 dxa (6.5 inches)
-  // Left logo/brand column: 5500 dxa (span 4 rows)
-  // Meta keys column: 1500 dxa
-  // Meta values column: 2360 dxa
+  // Header Table Column allocation across USABLE_WIDTH (10466 dxa):
+  // Left logo/brand column: 6150 dxa (approx 58.8% to fit company title & subtitle cleanly)
+  // Meta keys column: 1680 dxa (approx 16.0%)
+  // Meta values column: 2636 dxa (approx 25.2%)
+  // Total: 6150 + 1680 + 2636 = 10466 dxa (fits exactly 100% of usable width)
+  const headerColWidths = [6150, 1680, 2636];
+
   const headerTable = new Table({
-    width: { size: 9360, type: WidthType.DXA },
+    width: { size: USABLE_WIDTH, type: WidthType.DXA },
     alignment: AlignmentType.CENTER,
+    layout: TableLayoutType.FIXED,
+    columnWidths: headerColWidths,
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 5500, type: WidthType.DXA },
+            width: { size: 6150, type: WidthType.DXA },
             rowSpan: 4,
             verticalAlign: 'center',
             borders: bordersAll,
+            margins: { top: 100, bottom: 100, left: 140, right: 140 },
             children: [
               new Paragraph({
                 children: [
@@ -102,8 +185,9 @@ export async function generateWordDocument(
             ],
           }),
           new TableCell({
-            width: { size: 1500, type: WidthType.DXA },
+            width: { size: 1680, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: 'Document:', size: 18, font: 'Arial' })],
@@ -111,8 +195,9 @@ export async function generateWordDocument(
             ],
           }),
           new TableCell({
-            width: { size: 2360, type: WidthType.DXA },
+            width: { size: 2636, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: settings.docNumber, size: 18, font: 'Arial' })],
@@ -124,8 +209,9 @@ export async function generateWordDocument(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 1500, type: WidthType.DXA },
+            width: { size: 1680, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: 'Date:', size: 18, font: 'Arial' })],
@@ -133,8 +219,9 @@ export async function generateWordDocument(
             ],
           }),
           new TableCell({
-            width: { size: 2360, type: WidthType.DXA },
+            width: { size: 2636, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [
@@ -152,8 +239,9 @@ export async function generateWordDocument(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 1500, type: WidthType.DXA },
+            width: { size: 1680, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: 'Rev No.:', size: 18, font: 'Arial' })],
@@ -161,8 +249,9 @@ export async function generateWordDocument(
             ],
           }),
           new TableCell({
-            width: { size: 2360, type: WidthType.DXA },
+            width: { size: 2636, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: settings.revNumber, size: 18, font: 'Arial' })],
@@ -174,8 +263,9 @@ export async function generateWordDocument(
       new TableRow({
         children: [
           new TableCell({
-            width: { size: 1500, type: WidthType.DXA },
+            width: { size: 1680, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [new TextRun({ text: 'Page:', size: 18, font: 'Arial' })],
@@ -183,8 +273,9 @@ export async function generateWordDocument(
             ],
           }),
           new TableCell({
-            width: { size: 2360, type: WidthType.DXA },
+            width: { size: 2636, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 60, bottom: 60, left: 100, right: 100 },
             children: [
               new Paragraph({
                 children: [
@@ -206,13 +297,14 @@ export async function generateWordDocument(
           }),
         ],
       }),
-      // Bottom banner row
+      // Bottom banner row (title row) spanning all 3 columns
       new TableRow({
         children: [
           new TableCell({
             columnSpan: 3,
-            width: { size: 9360, type: WidthType.DXA },
+            width: { size: USABLE_WIDTH, type: WidthType.DXA },
             borders: bordersAll,
+            margins: { top: 80, bottom: 80, left: 100, right: 100 },
             shading: {
               type: ShadingType.CLEAR,
               fill: 'F7FAFC',
@@ -252,7 +344,7 @@ export async function generateWordDocument(
     const entry = filteredEntries[i];
     const sectionTitleText = `${entry.location}  ${formatReportDate(entry.date)}`;
 
-    // Top spacing
+    // Top spacing before section
     bodyChildren.push(
       new Paragraph({
         spacing: { before: 240, after: 120 },
@@ -260,15 +352,18 @@ export async function generateWordDocument(
       })
     );
 
-    // Gray section header table or paragraph (IMG_4425 has gray shaded highlight banner)
+    // Gray section header table matching exact USABLE_WIDTH and centered
     const sectionBarTable = new Table({
-      width: { size: 9360, type: WidthType.DXA },
-      alignment: AlignmentType.LEFT,
+      width: { size: USABLE_WIDTH, type: WidthType.DXA },
+      alignment: AlignmentType.CENTER,
+      layout: TableLayoutType.FIXED,
+      columnWidths: [USABLE_WIDTH],
+      borders: noBorders,
       rows: [
         new TableRow({
           children: [
             new TableCell({
-              width: { size: 9360, type: WidthType.DXA },
+              width: { size: USABLE_WIDTH, type: WidthType.DXA },
               borders: noBorders,
               shading: {
                 type: ShadingType.CLEAR,
@@ -282,6 +377,7 @@ export async function generateWordDocument(
               },
               children: [
                 new Paragraph({
+                  alignment: AlignmentType.LEFT,
                   children: [
                     new TextRun({
                       text: sectionTitleText,
@@ -309,27 +405,52 @@ export async function generateWordDocument(
       })
     );
 
-    // Photos grid: 3 per row (matches user screenshots)
+    // Photos grid: 3 per row (default) or 2 per row
     const photosPerRow = settings.photosPerRow || 3;
     const photoRows = chunkArray(entry.photos, photosPerRow);
 
     if (entry.photos.length > 0) {
       const tableRows: TableRow[] = [];
 
+      // Calculate column widths that strictly sum to USABLE_WIDTH
+      const colWidths: number[] = [];
+      const baseColWidth = Math.floor(USABLE_WIDTH / photosPerRow);
+      for (let c = 0; c < photosPerRow; c++) {
+        if (c === photosPerRow - 1) {
+          colWidths.push(USABLE_WIDTH - baseColWidth * (photosPerRow - 1));
+        } else {
+          colWidths.push(baseColWidth);
+        }
+      }
+
+      // Max image dimensions in pixels (at 96 DPI: 1 px ≈ 15 dxa)
+      // Cell usable width is ~224 px for 3 cols, ~340 px for 2 cols
+      const maxImgW = photosPerRow === 3 ? 216 : 320;
+      const maxImgH = photosPerRow === 3 ? 162 : 240;
+
       for (const rowPhotos of photoRows) {
         const cells: TableCell[] = [];
-        const cellWidth = Math.floor(9360 / photosPerRow);
 
         for (let col = 0; col < photosPerRow; col++) {
           const photo = rowPhotos[col];
+          const cellWidth = colWidths[col];
+
           if (photo) {
             try {
               const imageBytes = dataUrlToUint8Array(photo.dataUrl);
+              const naturalDims = await resolvePhotoDimensions(photo);
+              const scaledDims = computeImageDimensions(
+                naturalDims.width,
+                naturalDims.height,
+                maxImgW,
+                maxImgH
+              );
+
               cells.push(
                 new TableCell({
                   width: { size: cellWidth, type: WidthType.DXA },
                   borders: noBorders,
-                  margins: { top: 60, bottom: 60, left: 60, right: 60 },
+                  margins: { top: 60, bottom: 60, left: 40, right: 40 },
                   children: [
                     new Paragraph({
                       alignment: AlignmentType.CENTER,
@@ -337,8 +458,8 @@ export async function generateWordDocument(
                         new ImageRun({
                           data: imageBytes,
                           transformation: {
-                            width: photosPerRow === 3 ? 196 : 300,
-                            height: photosPerRow === 3 ? 165 : 225,
+                            width: scaledDims.width,
+                            height: scaledDims.height,
                           },
                           type: 'jpg',
                         }),
@@ -355,6 +476,7 @@ export async function generateWordDocument(
                   borders: noBorders,
                   children: [
                     new Paragraph({
+                      alignment: AlignmentType.CENTER,
                       children: [new TextRun({ text: '[Photo error]', size: 16 })],
                     }),
                   ],
@@ -362,7 +484,7 @@ export async function generateWordDocument(
               );
             }
           } else {
-            // Empty placeholder cell to maintain 3-column table alignment
+            // Empty placeholder cell to maintain multi-column table alignment
             cells.push(
               new TableCell({
                 width: { size: cellWidth, type: WidthType.DXA },
@@ -377,8 +499,11 @@ export async function generateWordDocument(
       }
 
       const photoTable = new Table({
-        width: { size: 9360, type: WidthType.DXA },
+        width: { size: USABLE_WIDTH, type: WidthType.DXA },
         alignment: AlignmentType.CENTER,
+        layout: TableLayoutType.FIXED,
+        columnWidths: colWidths,
+        borders: noBorders,
         rows: tableRows,
       });
 
@@ -386,6 +511,8 @@ export async function generateWordDocument(
     } else {
       bodyChildren.push(
         new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 120, after: 120 },
           children: [
             new TextRun({
               text: 'No photos logged for this entry.',
@@ -409,7 +536,7 @@ export async function generateWordDocument(
     }
   }
 
-  // Footer with document and page info
+  // Footer with document and page info aligned cleanly with margins
   const footer = new Footer({
     children: [
       new Paragraph({
@@ -445,11 +572,16 @@ export async function generateWordDocument(
       {
         properties: {
           page: {
+            size: {
+              width: A4_PAGE_WIDTH,
+              height: A4_PAGE_HEIGHT,
+              orientation: PageOrientation.PORTRAIT,
+            },
             margin: {
-              top: 720, // 0.5 inch
-              bottom: 720,
-              left: 720,
-              right: 720,
+              top: MARGIN_TOP,
+              bottom: MARGIN_BOTTOM,
+              left: MARGIN_LEFT,
+              right: MARGIN_RIGHT,
             },
           },
         },
@@ -463,3 +595,4 @@ export async function generateWordDocument(
 
   return await Packer.toBlob(doc);
 }
+
