@@ -32,6 +32,9 @@ import { WordReportPreview } from './components/WordReportPreview';
 import { ReportSettingsModal } from './components/ReportSettingsModal';
 import { DataBackupModal } from './components/DataBackupModal';
 import { PhotoLightbox } from './components/PhotoLightbox';
+import { PWAInstallModal } from './components/PWAInstallModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import { formatMonthYear } from './utils/imageUtils';
 
 export default function App() {
@@ -42,6 +45,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'entries' | 'report'>('entries');
   const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // PWA install state
+  const { isInstalled } = usePWAInstall();
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
 
   // Modal states
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
@@ -226,6 +233,8 @@ export default function App() {
         }}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBackup={() => setIsBackupOpen(true)}
+        onOpenInstall={() => setIsInstallModalOpen(true)}
+        isInstalled={isInstalled}
       />
 
       {/* Main Container */}
@@ -364,9 +373,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Floating Action Button for Mobile Users */}
+      {/* Floating Action Button for Mobile Users (positioned above iOS safe-area home bar) */}
       {activeTab === 'entries' && (
-        <div className="fixed bottom-5 right-5 sm:hidden z-30">
+        <div className="fixed bottom-[max(1.25rem,calc(env(safe-area-inset-bottom)+0.75rem))] right-5 sm:hidden z-30">
           <button
             type="button"
             id="btn-fab-add-mobile"
@@ -426,6 +435,15 @@ export default function App() {
           }
         />
       )}
+
+      {/* PWA iPhone & Desktop Install Modal */}
+      <PWAInstallModal
+        isOpen={isInstallModalOpen}
+        onClose={() => setIsInstallModalOpen(false)}
+      />
+
+      {/* Offline Status Badge */}
+      <OfflineIndicator />
     </div>
   );
 }

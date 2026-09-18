@@ -7,6 +7,7 @@ import {
   HardDriveDownload,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 import { formatMonthYear } from '../utils/imageUtils';
 
@@ -20,6 +21,8 @@ interface HeaderBarProps {
   onOpenNewEntry: () => void;
   onOpenSettings: () => void;
   onOpenBackup: () => void;
+  onOpenInstall: () => void;
+  isInstalled: boolean;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -32,6 +35,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenNewEntry,
   onOpenSettings,
   onOpenBackup,
+  onOpenInstall,
+  isInstalled,
 }) => {
   const handlePrevMonth = () => {
     if (selectedMonth === 'all') return;
@@ -50,8 +55,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   };
 
   return (
-    <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs print:hidden">
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3">
+    <header className="bg-white border-b border-neutral-200 sticky top-0 z-30 shadow-2xs print:hidden pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2.5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Brand & Mode Switcher */}
           <div className="flex items-center justify-between">
@@ -61,21 +66,31 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               </div>
               <div>
                 <h1 className="text-sm sm:text-base font-bold text-neutral-900 tracking-tight leading-none">
-                  Photo Report Generator
+                  Report Generator
                 </h1>
                 <span className="text-[11px] text-neutral-500">
-                  Laptop & iPhone • Local & Offline
+                  Offline PWA • iPhone & Laptop
                 </span>
               </div>
             </div>
 
             {/* Quick Actions on Mobile */}
             <div className="flex items-center space-x-1 md:hidden">
+              {!isInstalled && (
+                <button
+                  type="button"
+                  onClick={onOpenInstall}
+                  title="Install to iPhone"
+                  className="p-2 text-blue-600 hover:text-blue-800 rounded-lg hover:bg-blue-50 transition-colors"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onOpenBackup}
                 title="Backup / Transfer"
-                className="p-2 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100"
+                className="p-2 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors"
               >
                 <HardDriveDownload className="w-4 h-4" />
               </button>
@@ -83,7 +98,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 type="button"
                 onClick={onOpenSettings}
                 title="Settings"
-                className="p-2 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100"
+                className="p-2 text-neutral-500 hover:text-neutral-900 rounded-lg hover:bg-neutral-100 transition-colors"
               >
                 <Settings2 className="w-4 h-4" />
               </button>
@@ -165,6 +180,17 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
           {/* Right: New Entry Button & Desktop Settings */}
           <div className="hidden md:flex items-center space-x-2">
+            {!isInstalled && (
+              <button
+                type="button"
+                onClick={onOpenInstall}
+                title="Install PWA to Desktop/Phone"
+                className="inline-flex items-center px-3 py-2 text-neutral-600 hover:text-neutral-900 border border-neutral-200 hover:bg-neutral-50 text-xs font-semibold rounded-xl transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                Install App
+              </button>
+            )}
             <button
               type="button"
               onClick={onOpenBackup}
@@ -196,3 +222,4 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     </header>
   );
 };
+

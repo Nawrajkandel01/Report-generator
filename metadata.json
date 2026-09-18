@@ -1,6 +1,6 @@
 {
-  "name": "Daily Photo Log & Report Generator",
-  "description": "Log daily photos with dates and locations from your laptop or iPhone, and generate professional Microsoft Word monthly photo reports.",
+  "name": "Report Generator",
+  "description": "Offline work report generator",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
